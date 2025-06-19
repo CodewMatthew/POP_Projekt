@@ -1,0 +1,31 @@
+{
+  "obiekty_sakralne": [
+    {
+      "nazwa": "Kościół Najświętszego Zbawiciela w Rykach",
+      "miejscowosc": "Ryki",
+      "typ_obiektu": "Kościół",
+      "coordinates": [
+        51.626947222222,
+        21.928616666667
+      ]
+    },
+    {
+      "nazwa": "Parafia Chrystusa Miłosiernego w Dęblinie",
+      "miejscowosc": "Dęblin",
+      "typ_obiektu": "Kościół",
+      "coordinates": [
+        51.572222222222,
+        21.836944444444
+      ]
+    },
+    {
+      "nazwa": "Bazylika Świętego Krzyża w Warszawie",
+      "miejscowosc": "Warszawa",
+      "typ_obiektu": "Bazylika",
+      "coordinates": [
+        52.238611111111,
+        21.016666666667
+      ]
+    }
+  ]
+}
