@@ -1,0 +1,431 @@
+from tkinter import *
+from tkinter import ttk, messagebox
+import tkintermapview
+import json
+import os
+import requests
+from bs4 import BeautifulSoup
+import re
+
+obiekty_sakralne = []
+duchowni = []
+pracownicy = []
+
+
+class ObiektSakralny:
+    def __init__(self, nazwa, miejscowosc, typ_obiektu):
+        self.nazwa = nazwa
+        self.miejscowosc = miejscowosc
+        self.typ_obiektu = typ_obiektu
+        self.coordinates = self.get_coordinates()
+        self.marker = None
+        if self.coordinates[0] != 0 and self.coordinates[1] != 0:
+            self.marker = map_widget.set_marker(self.coordinates[0], self.coordinates[1], text=self.nazwa)
+
+    def get_coordinates(self):
+        try:
+            search_terms = [
+                f'{self.nazwa}_{self.miejscowosc}',
+                f'{self.typ_obiektu}_{self.nazwa}_{self.miejscowosc}',
+                f'Kościół_{self.nazwa}_{self.miejscowosc}' if self.typ_obiektu == 'Kościół' else None,
+                f'{self.nazwa}_w_{self.miejscowosc}',
+                f'{self.nazwa}',
+                f'{self.miejscowosc}_{self.nazwa}',
+                f'{self.miejscowosc}'
+            ]
+
+            search_terms = [term for term in search_terms if term is not None]
+
+            print(f"Szukam współrzędnych dla: {self.nazwa} w {self.miejscowosc}")
+
+            for term in search_terms:
+                try:
+                    url_term = term.replace(" ", "_")
+                    url = f'https://pl.wikipedia.org/wiki/{url_term}'
+
+                    print(f"Próbuję URL: {url}")
+
+                    headers = {
+                        'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/91.0.4472.124 Safari/537.36'
+                    }
+
+                    response = requests.get(url, timeout=10, headers=headers)
+
+                    if response.status_code == 200:
+                        soup = BeautifulSoup(response.text, 'html.parser')
+
+                        coords = self._extract_coordinates_from_infobox(soup)
+                        if coords:
+                            print(f"Znaleziono współrzędne w infoboxie: {coords}")
+                            return coords
+
+                        coords = self._extract_coordinates_from_classes(soup)
+                        if coords:
+                            print(f"Znaleziono współrzędne w klasach: {coords}")
+                            return coords
+
+                        coords = self._extract_coordinates_from_geo(soup)
+                        if coords:
+                            print(f"Znaleziono współrzędne w geo: {coords}")
+                            return coords
+
+                except Exception as e:
+                    print(f"Błąd przy pobieraniu {url}: {e}")
+                    continue
+
+            print(f"Nie znaleziono współrzędnych, używam domyślnych dla Warszawy")
+            return [52.2297, 21.0122]
+
+        except Exception as e:
+            print(f"Ogólny błąd przy pobieraniu współrzędnych: {e}")
+            return [52.2297, 21.0122]
+
+    def _extract_coordinates_from_infobox(self, soup):
+        try:
+            infobox = soup.find('table', class_='infobox')
+            if infobox:
+                geohack_links = infobox.find_all('a', href=re.compile(r'geohack'))
+                for link in geohack_links:
+                    href = link.get('href', '')
+                    match = re.search(r'params=([0-9.]+)_N_([0-9.]+)_E', href)
+                    if match:
+                        lat = float(match.group(1))
+                        lon = float(match.group(2))
+                        return [lat, lon]
+
+                coord_text = infobox.get_text()
+                coords = self._parse_coordinates_from_text(coord_text)
+                if coords:
+                    return coords
+
+            return None
+        except:
+            return None
+
+    def _extract_coordinates_from_classes(self, soup):
+        try:
+            longitude_elem = soup.select('.longitude')
+            latitude_elem = soup.select('.latitude')
+
+            if longitude_elem and latitude_elem:
+                for i in range(min(len(longitude_elem), len(latitude_elem))):
+                    try:
+                        lon_text = longitude_elem[i].get_text().strip()
+                        lat_text = latitude_elem[i].get_text().strip()
+
+                        longitude = self._clean_coordinate(lon_text)
+                        latitude = self._clean_coordinate(lat_text)
+
+                        if longitude and latitude:
+                            return [latitude, longitude]
+                    except:
+                        continue
+
+            return None
+        except:
+            return None
+
+    def _clean_coordinate(self, coord_text):
+        try:
+            cleaned = re.sub(r'[^\d.,°′″NSEW-]', '', coord_text)
+            cleaned = cleaned.replace(',', '.')
+
+            if '°' in cleaned or '′' in cleaned or '″' in cleaned:
+                return self._convert_dms_to_decimal(coord_text)
+
+            numbers = re.findall(r'\d+\.?\d*', cleaned)
+            if numbers:
+                return float(numbers[0])
+
+            return None
+        except:
+            return None
+
+    def _convert_dms_to_decimal(self, dms_text):
+        try:
+            patterns = [
+                r'(\d+)°(\d+)′(\d+)″',
+                r'(\d+)°(\d+)′',
+                r'(\d+)°'
+            ]
+
+            for pattern in patterns:
+                match = re.search(pattern, dms_text)
+                if match:
+                    degrees = float(match.group(1))
+                    minutes = float(match.group(2)) if len(match.groups()) > 1 else 0
+                    seconds = float(match.group(3)) if len(match.groups()) > 2 else 0
+
+                    decimal = degrees + minutes / 60 + seconds / 3600
+
+                    if 'S' in dms_text.upper() or 'W' in dms_text.upper():
+                        decimal = -decimal
+
+                    return decimal
+
+            return None
+        except:
+            return None
+
+    def _extract_coordinates_from_geo(self, soup):
+        try:
+            geo_elem = soup.find(class_='geo')
+            if geo_elem:
+                coord_text = geo_elem.get_text()
+                coords = self._parse_coordinates_from_text(coord_text)
+                return coords
+            return None
+        except:
+            return None
+
+    def _parse_coordinates_from_text(self, text):
+        try:
+            numbers = re.findall(r'\d+\.?\d*', text)
+            if len(numbers) >= 2:
+                lat = float(numbers[0])
+                lon = float(numbers[1])
+
+                if 49 <= lat <= 55 and 14 <= lon <= 25:
+                    return [lat, lon]
+
+            return None
+        except:
+            return None
+    def to_dict(self):
+        return {
+            'nazwa': self.nazwa,
+            'miejscowosc': self.miejscowosc,
+            'typ_obiektu': self.typ_obiektu,
+            'coordinates': self.coordinates
+        }
+
+    @classmethod
+    def from_dict(cls, data):
+        obj = cls(data['nazwa'], data['miejscowosc'], data['typ_obiektu'])
+        obj.coordinates = data.get('coordinates', [52.23, 21.00])
+        return obj
+
+    def show_selected_objects_on_map(self):
+        map_widget.delete_all_marker()
+
+        for obj in obiekty_sakralne:
+            if obj.coordinates[0] != 0 and obj.coordinates[1] != 0:
+                obj.marker = map_widget.set_marker(obj.coordinates[0], obj.coordinates[1], text=obj.nazwa)
+
+        if obiekty_sakralne:
+            map_widget.set_position(obiekty_sakralne[0].coordinates[0], obiekty_sakralne[0].coordinates[1])
+            map_widget.set_zoom(8)
+
+def save_data_to_json():
+    data = {
+        'obiekty_sakralne': [obj.to_dict() for obj in obiekty_sakralne],
+    }
+
+    with open('../sakralne_dane.json', 'w', encoding='utf-8') as f:
+        json.dump(data, f, ensure_ascii=False, indent=2)
+
+
+def load_data_from_json():
+    global obiekty_sakralne, duchowni, pracownicy
+
+    if os.path.exists('../sakralne_dane.json'):
+        try:
+            with open('../sakralne_dane.json', 'r', encoding='utf-8') as f:
+                data = json.load(f)
+
+            obiekty_sakralne = [ObiektSakralny.from_dict(obj) for obj in data.get('obiekty_sakralne', [])]
+
+
+            # Odtwórz markery na mapie
+            for obj in obiekty_sakralne:
+                if obj.coordinates[0] != 0 and obj.coordinates[1] != 0:
+                    obj.marker = map_widget.set_marker(obj.coordinates[0], obj.coordinates[1], text=obj.nazwa)
+
+            show_obiekty_sakralne()
+
+        except Exception as e:
+            messagebox.showerror("Błąd", f"Nie można załadować danych: {str(e)}")
+
+def update_combo_boxes():
+    obiekty_nazwy = [obj.nazwa for obj in obiekty_sakralne]
+    
+def add_obiekt_sakralny():
+    nazwa = entry_nazwa_obiektu.get().strip()
+    miejscowosc = entry_miejscowosc_obiektu.get().strip()
+    typ_obiektu = combo_typ_obiektu.get().strip()
+
+    if not nazwa or not miejscowosc or not typ_obiektu:
+        messagebox.showwarning("Błąd", "Wypełnij wszystkie pola!")
+        return
+
+    obiekt = ObiektSakralny(nazwa, miejscowosc, typ_obiektu)
+    obiekty_sakralne.append(obiekt)
+
+    show_obiekty_sakralne()
+    save_data_to_json()
+
+    entry_nazwa_obiektu.delete(0, END)
+    entry_miejscowosc_obiektu.delete(0, END)
+    combo_typ_obiektu.set("")
+    entry_nazwa_obiektu.focus()
+
+
+def show_obiekty_sakralne():
+    listbox_obiekty_sakralne.delete(0, END)
+    for idx, obiekt in enumerate(obiekty_sakralne):
+        listbox_obiekty_sakralne.insert(idx, f'{idx + 1}. {obiekt.nazwa} - {obiekt.miejscowosc} ({obiekt.typ_obiektu})')
+
+
+def remove_obiekt_sakralny():
+    try:
+        i = listbox_obiekty_sakralne.index(ACTIVE)
+        if obiekty_sakralne[i].marker:
+            obiekty_sakralne[i].marker.delete()
+        obiekty_sakralne.pop(i)
+        show_obiekty_sakralne()
+        save_data_to_json()
+    except:
+        messagebox.showwarning("Błąd", "Wybierz obiekt do usunięcia!")
+
+
+def show_obiekt_details():
+    try:
+        i = listbox_obiekty_sakralne.index(ACTIVE)
+        obiekt = obiekty_sakralne[i]
+
+        label_nazwa_szczegoly_wartosc.config(text=obiekt.nazwa)
+        label_miejscowosc_szczegoly_wartosc.config(text=obiekt.miejscowosc)
+        label_typ_szczegoly_wartosc.config(text=obiekt.typ_obiektu)
+
+        if obiekt.coordinates[0] != 0 and obiekt.coordinates[1] != 0:
+            map_widget.set_zoom(12)
+            map_widget.set_position(obiekt.coordinates[0], obiekt.coordinates[1])
+    except:
+        messagebox.showwarning("Błąd", "Wybierz obiekt do wyświetlenia!")
+
+
+def edit_obiekt_sakralny():
+    try:
+        i = listbox_obiekty_sakralne.index(ACTIVE)
+        obiekt = obiekty_sakralne[i]
+
+        entry_nazwa_obiektu.delete(0, END)
+        entry_nazwa_obiektu.insert(0, obiekt.nazwa)
+        entry_miejscowosc_obiektu.delete(0, END)
+        entry_miejscowosc_obiektu.insert(0, obiekt.miejscowosc)
+        combo_typ_obiektu.set(obiekt.typ_obiektu)
+
+        # Usuń marker z mapy
+        if obiekt.marker:
+            obiekt.marker.delete()
+
+        obiekty_sakralne.pop(i)
+        show_obiekty_sakralne()
+        save_data_to_json()
+
+    except:
+        messagebox.showwarning("Błąd", "Wybierz obiekt do edycji!")
+
+
+def show_obiekty_sakralne_on_map():
+    map_widget.delete_all_marker()
+
+    for obj in obiekty_sakralne:
+        if obj.coordinates[0] != 0 and obj.coordinates[1] != 0:
+            marker_text = f"{obj.nazwa},{obj.miejscowosc} ({obj.typ_obiektu})"
+            obj.marker = map_widget.set_marker(obj.coordinates[0], obj.coordinates[1], text=marker_text)
+
+    if obiekty_sakralne:
+        map_widget.set_position(obiekty_sakralne[0].coordinates[0], obiekty_sakralne[0].coordinates[1])
+        #map_widget.set_zoom(8)
+
+
+
+
+root = Tk()
+root.title('System zarządzania obiektami sakralnymi')
+root.geometry('1400x800')
+main_frame = Frame(root)
+main_frame.pack(fill='both', expand=True, padx=10, pady=10)
+
+# Lewa strona - notebook z zakładkami
+left_frame = Frame(main_frame)
+left_frame.pack(side='left', fill='both', expand=True)
+
+# Prawa strona - mapa
+right_frame = Frame(main_frame)
+right_frame.pack(side='right', fill='both', expand=True, padx=(10, 0))
+
+# Tworzenie mapy w prawej ramce
+map_widget = tkintermapview.TkinterMapView(right_frame, width=700, height=750)
+map_widget.pack(fill='both', expand=True)
+map_widget.set_position(52.23, 21.00)
+map_widget.set_zoom(6)
+
+notebook = ttk.Notebook(left_frame)
+notebook.pack(fill='both', expand=True, padx=10, pady=10)
+
+frame_obiekty = ttk.Frame(notebook)
+notebook.add(frame_obiekty, text='Obiekty sakralne')
+
+ramka_lista_obiektow = Frame(frame_obiekty)
+ramka_formularz_obiektow = Frame(frame_obiekty)
+ramka_szczegoly_obiektow = Frame(frame_obiekty)
+
+# Ujednolicony szablon dla obiektów sakralnych
+ramka_lista_obiektow.grid(row=0, column=0, padx=10, pady=5, sticky='nsew')
+ramka_formularz_obiektow.grid(row=0, column=1, padx=10, pady=5, sticky='nsew')
+ramka_szczegoly_obiektow.grid(row=1, column=0, columnspan=2, padx=10, pady=5, sticky='ew')
+
+# Konfiguracja grid
+frame_obiekty.grid_columnconfigure(0, weight=1)
+frame_obiekty.grid_columnconfigure(1, weight=1)
+
+Label(ramka_lista_obiektow, text='Lista obiektów sakralnych', font=('Arial', 12, 'bold')).grid(row=0, column=0, columnspan=3, pady=5)
+
+listbox_obiekty_sakralne = Listbox(ramka_lista_obiektow, width=40, height=12)
+listbox_obiekty_sakralne.grid(row=1, column=0, columnspan=3, pady=5)
+
+Button(ramka_lista_obiektow, text='Usuń obiekt', command=remove_obiekt_sakralny).grid(row=2, column=0, padx=2, pady=2)
+Button(ramka_lista_obiektow, text='Edytuj obiekt', command=edit_obiekt_sakralny).grid(row=2, column=1, padx=2, pady=2)
+Button(ramka_lista_obiektow, text='Pokaż szczegóły', command=show_obiekt_details).grid(row=2, column=2, padx=2, pady=2)
+Button(ramka_lista_obiektow, text='Pokaż mapę obiektów', command=show_obiekty_sakralne_on_map).grid(row=3, column=0, columnspan=3, padx=2, pady=2)
+
+Label(ramka_formularz_obiektow, text='Dodaj obiekt sakralny', font=('Arial', 12, 'bold')).grid(row=0, column=0, columnspan=2, pady=5)
+
+Label(ramka_formularz_obiektow, text='Nazwa obiektu:').grid(row=1, column=0, sticky=W, pady=2)
+entry_nazwa_obiektu = Entry(ramka_formularz_obiektow, width=25)
+entry_nazwa_obiektu.grid(row=1, column=1, pady=2)
+
+Label(ramka_formularz_obiektow, text='Miejscowość:').grid(row=2, column=0, sticky=W, pady=2)
+entry_miejscowosc_obiektu = Entry(ramka_formularz_obiektow, width=25)
+entry_miejscowosc_obiektu.grid(row=2, column=1, pady=2)
+
+Label(ramka_formularz_obiektow, text='Typ obiektu:').grid(row=3, column=0, sticky=W, pady=2)
+combo_typ_obiektu = ttk.Combobox(ramka_formularz_obiektow, width=22,
+                                 values=['Kościół','Cmentarz', 'Kaplica', 'Bazylika', 'Katedra', 'Klasztor', 'Synagoga', 'Meczet'])
+combo_typ_obiektu.grid(row=3, column=1, pady=2)
+
+Button(ramka_formularz_obiektow, text='Dodaj obiekt', command=add_obiekt_sakralny).grid(row=4, column=0, columnspan=2, pady=10)
+
+Label(ramka_szczegoly_obiektow, text='Szczegóły obiektu sakralnego:', font=('Arial', 12, 'bold')).grid(row=0, column=0, columnspan=6, pady=5)
+
+Label(ramka_szczegoly_obiektow, text='Nazwa:').grid(row=1, column=0, sticky=W, padx=5)
+label_nazwa_szczegoly_wartosc = Label(ramka_szczegoly_obiektow, text='-----', relief='sunken', width=15)
+label_nazwa_szczegoly_wartosc.grid(row=1, column=1, padx=5)
+
+Label(ramka_szczegoly_obiektow, text='Miejscowość:').grid(row=1, column=2, sticky=W, padx=5)
+label_miejscowosc_szczegoly_wartosc = Label(ramka_szczegoly_obiektow, text='-----', relief='sunken', width=15)
+label_miejscowosc_szczegoly_wartosc.grid(row=1, column=3, padx=5)
+
+Label(ramka_szczegoly_obiektow, text='Typ:').grid(row=1, column=4, sticky=W, padx=5)
+label_typ_szczegoly_wartosc = Label(ramka_szczegoly_obiektow, text='-----', relief='sunken', width=15)
+label_typ_szczegoly_wartosc.grid(row=1, column=5, padx=5)
+
+def on_tab_changed(event):
+    update_combo_boxes()
+
+load_data_from_json()
+update_combo_boxes()
+
+root.mainloop()
