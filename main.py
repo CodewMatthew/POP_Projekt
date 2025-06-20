@@ -236,6 +236,25 @@ class Duchowny:
     def from_dict(cls, data):
         return cls(data['imie'], data['nazwisko'], data['funkcja'], data['obiekt_sakralny'])
 
+class Pracownik:
+    def __init__(self, imie, nazwisko, stanowisko, obiekt_sakralny):
+        self.imie = imie
+        self.nazwisko = nazwisko
+        self.stanowisko = stanowisko
+        self.obiekt_sakralny = obiekt_sakralny
+
+    def to_dict(self):
+        return {
+            'imie': self.imie,
+            'nazwisko': self.nazwisko,
+            'stanowisko': self.stanowisko,
+            'obiekt_sakralny': self.obiekt_sakralny
+        }
+
+    @classmethod
+    def from_dict(cls, data):
+        return cls(data['imie'], data['nazwisko'], data['stanowisko'], data['obiekt_sakralny'])
+
 
 def save_data_to_json():
     data = {
@@ -258,6 +277,7 @@ def load_data_from_json():
 
             obiekty_sakralne = [ObiektSakralny.from_dict(obj) for obj in data.get('obiekty_sakralne', [])]
             duchowni = [Duchowny.from_dict(duch) for duch in data.get('duchowni', [])]
+            pracownicy = [Pracownik.from_dict(prac) for prac in data.get('pracownicy', [])]
 
             # Odtwórz markery na mapie
             for obj in obiekty_sakralne:
@@ -266,7 +286,7 @@ def load_data_from_json():
 
             show_obiekty_sakralne()
             show_duchowni()
-
+            show_pracownikow()
 
         except Exception as e:
             messagebox.showerror("Błąd", f"Nie można załadować danych: {str(e)}")
@@ -274,6 +294,7 @@ def load_data_from_json():
 def update_combo_boxes():
     obiekty_nazwy = [obj.nazwa for obj in obiekty_sakralne]
     combo_obiekt_duchowny['values'] = obiekty_nazwy
+    combo_obiekt_pracownik['values'] = obiekty_nazwy
 
 def add_obiekt_sakralny():
     nazwa = entry_nazwa_obiektu.get().strip()
@@ -326,6 +347,7 @@ def show_obiekt_details():
         if obiekt.coordinates[0] != 0 and obiekt.coordinates[1] != 0:
             map_widget.set_zoom(12)
             map_widget.set_position(obiekt.coordinates[0], obiekt.coordinates[1])
+        show_wszyscy_on_map()
     except:
         messagebox.showwarning("Błąd", "Wybierz obiekt do wyświetlenia!")
 
@@ -454,6 +476,120 @@ def show_duchowni_on_map():
                 map_widget.set_position(obj.coordinates[0], obj.coordinates[1])
                 #map_widget.set_zoom(8)
                 break
+
+
+def add_pracownik():
+    imie = entry_imie_pracownik.get().strip()
+    nazwisko = entry_nazwisko_pracownik.get().strip()
+    stanowisko = entry_stanowisko_pracownik.get().strip()
+    obiekt_idx = combo_obiekt_pracownik.current()
+
+    if not imie or not nazwisko or not stanowisko or obiekt_idx == -1:
+        messagebox.showwarning("Błąd", "Wypełnij wszystkie pola!")
+        return
+
+    obiekt_nazwa = obiekty_sakralne[obiekt_idx].nazwa
+    pracownik = Pracownik(imie, nazwisko, stanowisko, obiekt_nazwa)
+    pracownicy.append(pracownik)
+
+    show_pracownikow()
+    save_data_to_json()
+
+    entry_imie_pracownik.delete(0, END)
+    entry_nazwisko_pracownik.delete(0, END)
+    entry_stanowisko_pracownik.delete(0, END)
+    combo_obiekt_pracownik.set("")
+    entry_imie_pracownik.focus()
+
+
+def show_pracownikow():
+    listbox_pracownicy.delete(0, END)
+    for idx, pracownik in enumerate(pracownicy):
+        listbox_pracownicy.insert(idx,
+                                  f'{idx + 1}. {pracownik.imie} {pracownik.nazwisko} - {pracownik.stanowisko} ({pracownik.obiekt_sakralny})')
+
+
+def remove_pracownik():
+    try:
+        i = listbox_pracownicy.index(ACTIVE)
+        pracownicy.pop(i)
+        show_pracownikow()
+        save_data_to_json()
+    except:
+        messagebox.showwarning("Błąd", "Wybierz pracownika do usunięcia!")
+
+
+def edit_pracownik():
+    try:
+        i = listbox_pracownicy.index(ACTIVE)
+        pracownik = pracownicy[i]
+
+        entry_imie_pracownik.delete(0, END)
+        entry_imie_pracownik.insert(0, pracownik.imie)
+        entry_nazwisko_pracownik.delete(0, END)
+        entry_nazwisko_pracownik.insert(0, pracownik.nazwisko)
+        entry_stanowisko_pracownik.delete(0, END)
+        entry_stanowisko_pracownik.insert(0, pracownik.stanowisko)
+
+        for idx, obj in enumerate(obiekty_sakralne):
+            if obj.nazwa == pracownik.obiekt_sakralny:
+                combo_obiekt_pracownik.current(idx)
+                break
+
+        pracownicy.pop(i)
+        show_pracownikow()
+        save_data_to_json()
+
+    except:
+        messagebox.showwarning("Błąd", "Wybierz pracownika do edycji!")
+
+def show_pracownicy_on_map():
+    map_widget.delete_all_marker()
+
+    obiekty_z_pracownikami = set()
+    for pracownik in pracownicy:
+        obiekty_z_pracownikami.add(pracownik.obiekt_sakralny)
+
+    markers_added = False
+    for obj in obiekty_sakralne:
+        if obj.nazwa in obiekty_z_pracownikami and obj.coordinates[0] != 0 and obj.coordinates[1] != 0:
+            # Znajdź pracowników pracujących w tym obiekcie
+            pracownicy_w_obiekcie = [p for p in pracownicy if p.obiekt_sakralny == obj.nazwa]
+            pracownicy_tekst = ", \n".join([f"{p.imie} {p.nazwisko} ({p.stanowisko})" for p in pracownicy_w_obiekcie])
+
+            marker_text = f"Pracownicy:\n{pracownicy_tekst}"
+            obj.marker = map_widget.set_marker(obj.coordinates[0], obj.coordinates[1], text=marker_text)
+            markers_added = True
+
+    if markers_added and obiekty_sakralne:
+        # Znajdź pierwszy obiekt z pracownikami i wycentruj mapę
+        for obj in obiekty_sakralne:
+            if obj.nazwa in obiekty_z_pracownikami:
+                map_widget.set_position(obj.coordinates[0], obj.coordinates[1])
+                #map_widget.set_zoom(8)
+                break
+
+def show_wszyscy_on_map():
+    map_widget.delete_all_marker()
+
+    for obj in obiekty_sakralne:
+        if obj.coordinates[0] != 0 and obj.coordinates[1] != 0:
+            duchowni_w_obiekcie = [d for d in duchowni if d.obiekt_sakralny == obj.nazwa]
+            pracownicy_w_obiekcie = [p for p in pracownicy if p.obiekt_sakralny == obj.nazwa]
+
+            marker_text = obj.nazwa
+            if duchowni_w_obiekcie:
+                duchowni_tekst = ", ".join([f"{d.imie} {d.nazwisko}" for d in duchowni_w_obiekcie])
+                marker_text += f"\nDuchowni: \n{duchowni_tekst}"
+            if pracownicy_w_obiekcie:
+                pracownicy_tekst = ", ".join([f"{p.imie} {p.nazwisko}" for p in pracownicy_w_obiekcie])
+                marker_text += f"\nPracownicy: \n{pracownicy_tekst}"
+
+            obj.marker = map_widget.set_marker(obj.coordinates[0], obj.coordinates[1], text=marker_text)
+
+    if obiekty_sakralne:
+        map_widget.set_position(obiekty_sakralne[0].coordinates[0], obiekty_sakralne[0].coordinates[1])
+        map_widget.set_zoom(8)
 
 
 root = Tk()
@@ -586,6 +722,48 @@ combo_obiekt_duchowny = ttk.Combobox(ramka_formularz_duchownych, width=22, state
 combo_obiekt_duchowny.grid(row=4, column=1, pady=2)
 
 Button(ramka_formularz_duchownych, text='Dodaj duchownego', command=add_duchowny).grid(row=5, column=0, columnspan=2, pady=10)
+frame_pracownicy = ttk.Frame(notebook)
+notebook.add(frame_pracownicy, text='Pracownicy')
+
+# Ujednolicony szablon dla pracowników
+ramka_lista_pracownikow = Frame(frame_pracownicy)
+ramka_formularz_pracownikow = Frame(frame_pracownicy)
+
+ramka_lista_pracownikow.grid(row=0, column=0, padx=10, pady=5, sticky='nsew')
+ramka_formularz_pracownikow.grid(row=0, column=1, padx=10, pady=5, sticky='nsew')
+
+# Konfiguracja grid
+frame_pracownicy.grid_columnconfigure(0, weight=1)
+frame_pracownicy.grid_columnconfigure(1, weight=1)
+
+Label(ramka_lista_pracownikow, text='Lista pracowników', font=('Arial', 12, 'bold')).grid(row=0, column=0, columnspan=3, pady=5)
+
+listbox_pracownicy = Listbox(ramka_lista_pracownikow, width=40, height=12)
+listbox_pracownicy.grid(row=1, column=0, columnspan=3, pady=5)
+
+Button(ramka_lista_pracownikow, text='Usuń pracownika', command=remove_pracownik).grid(row=2, column=0, padx=2, pady=2)
+Button(ramka_lista_pracownikow, text='Edytuj pracownika', command=edit_pracownik).grid(row=2, column=1, padx=2, pady=2)
+Button(ramka_lista_pracownikow, text='Pokaż mapę pracowników', command=show_pracownicy_on_map).grid(row=3, column=0, columnspan=3, padx=2, pady=2)
+
+Label(ramka_formularz_pracownikow, text='Dodaj pracownika', font=('Arial', 12, 'bold')).grid(row=0, column=0, columnspan=2, pady=5)
+
+Label(ramka_formularz_pracownikow, text='Imię:').grid(row=1, column=0, sticky=W, pady=2)
+entry_imie_pracownik = Entry(ramka_formularz_pracownikow, width=25)
+entry_imie_pracownik.grid(row=1, column=1, pady=2)
+
+Label(ramka_formularz_pracownikow, text='Nazwisko:').grid(row=2, column=0, sticky=W, pady=2)
+entry_nazwisko_pracownik = Entry(ramka_formularz_pracownikow, width=25)
+entry_nazwisko_pracownik.grid(row=2, column=1, pady=2)
+
+Label(ramka_formularz_pracownikow, text='Stanowisko:').grid(row=3, column=0, sticky=W, pady=2)
+entry_stanowisko_pracownik = Entry(ramka_formularz_pracownikow, width=25)
+entry_stanowisko_pracownik.grid(row=3, column=1, pady=2)
+
+Label(ramka_formularz_pracownikow, text='Obiekt sakralny:').grid(row=4, column=0, sticky=W, pady=2)
+combo_obiekt_pracownik = ttk.Combobox(ramka_formularz_pracownikow, width=22, state='readonly')
+combo_obiekt_pracownik.grid(row=4, column=1, pady=2)
+
+Button(ramka_formularz_pracownikow, text='Dodaj pracownika', command=add_pracownik).grid(row=5, column=0, columnspan=2, pady=10)
 
 def on_tab_changed(event):
     update_combo_boxes()
