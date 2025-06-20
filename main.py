@@ -191,6 +191,7 @@ class ObiektSakralny:
             return None
         except:
             return None
+
     def to_dict(self):
         return {
             'nazwa': self.nazwa,
@@ -216,25 +217,47 @@ class ObiektSakralny:
             map_widget.set_position(obiekty_sakralne[0].coordinates[0], obiekty_sakralne[0].coordinates[1])
             map_widget.set_zoom(8)
 
+class Duchowny:
+    def __init__(self, imie, nazwisko, funkcja, obiekt_sakralny):
+        self.imie = imie
+        self.nazwisko = nazwisko
+        self.funkcja = funkcja
+        self.obiekt_sakralny = obiekt_sakralny
+
+    def to_dict(self):
+        return {
+            'imie': self.imie,
+            'nazwisko': self.nazwisko,
+            'funkcja': self.funkcja,
+            'obiekt_sakralny': self.obiekt_sakralny
+        }
+
+    @classmethod
+    def from_dict(cls, data):
+        return cls(data['imie'], data['nazwisko'], data['funkcja'], data['obiekt_sakralny'])
+
+
 def save_data_to_json():
     data = {
         'obiekty_sakralne': [obj.to_dict() for obj in obiekty_sakralne],
+        'duchowni': [duch.to_dict() for duch in duchowni],
+        'pracownicy': [prac.to_dict() for prac in pracownicy]
     }
 
-    with open('../sakralne_dane.json', 'w', encoding='utf-8') as f:
+    with open('sakralne_dane.json', 'w', encoding='utf-8') as f:
         json.dump(data, f, ensure_ascii=False, indent=2)
 
 
 def load_data_from_json():
     global obiekty_sakralne, duchowni, pracownicy
 
-    if os.path.exists('../sakralne_dane.json'):
+    if os.path.exists('sakralne_dane.json'):
         try:
-            with open('../sakralne_dane.json', 'r', encoding='utf-8') as f:
+            with open('sakralne_dane.json', 'r', encoding='utf-8') as f:
                 data = json.load(f)
 
             obiekty_sakralne = [ObiektSakralny.from_dict(obj) for obj in data.get('obiekty_sakralne', [])]
-
+            duchowni = [Duchowny.from_dict(duch) for duch in data.get('duchowni', [])]
 
             # Odtwórz markery na mapie
             for obj in obiekty_sakralne:
@@ -242,13 +265,16 @@ def load_data_from_json():
                     obj.marker = map_widget.set_marker(obj.coordinates[0], obj.coordinates[1], text=obj.nazwa)
 
             show_obiekty_sakralne()
+            show_duchowni()
+
 
         except Exception as e:
             messagebox.showerror("Błąd", f"Nie można załadować danych: {str(e)}")
 
 def update_combo_boxes():
     obiekty_nazwy = [obj.nazwa for obj in obiekty_sakralne]
-    
+    combo_obiekt_duchowny['values'] = obiekty_nazwy
+
 def add_obiekt_sakralny():
     nazwa = entry_nazwa_obiektu.get().strip()
     miejscowosc = entry_miejscowosc_obiektu.get().strip()
@@ -337,9 +363,97 @@ def show_obiekty_sakralne_on_map():
 
     if obiekty_sakralne:
         map_widget.set_position(obiekty_sakralne[0].coordinates[0], obiekty_sakralne[0].coordinates[1])
-        #map_widget.set_zoom(8)
+        # map_widget.set_zoom(8)
+
+def add_duchowny():
+    imie = entry_imie_duchowny.get().strip()
+    nazwisko = entry_nazwisko_duchowny.get().strip()
+    funkcja = entry_funkcja_duchowny.get().strip()
+    obiekt_idx = combo_obiekt_duchowny.current()
+
+    if not imie or not nazwisko or not funkcja or obiekt_idx == -1:
+        messagebox.showwarning("Błąd", "Wypełnij wszystkie pola!")
+        return
+
+    obiekt_nazwa = obiekty_sakralne[obiekt_idx].nazwa
+    duchowny = Duchowny(imie, nazwisko, funkcja, obiekt_nazwa)
+    duchowni.append(duchowny)
+
+    show_duchowni()
+    save_data_to_json()
+
+    entry_imie_duchowny.delete(0, END)
+    entry_nazwisko_duchowny.delete(0, END)
+    entry_funkcja_duchowny.delete(0, END)
+    combo_obiekt_duchowny.set("")
+    entry_imie_duchowny.focus()
 
 
+def show_duchowni():
+    listbox_duchowni.delete(0, END)
+    for idx, duchowny in enumerate(duchowni):
+        listbox_duchowni.insert(idx,
+                                f'{idx + 1}. {duchowny.imie} {duchowny.nazwisko} - {duchowny.funkcja} ({duchowny.obiekt_sakralny})')
+
+
+def remove_duchowny():
+    try:
+        i = listbox_duchowni.index(ACTIVE)
+        duchowni.pop(i)
+        show_duchowni()
+        save_data_to_json()
+    except:
+        messagebox.showwarning("Błąd", "Wybierz duchownego do usunięcia!")
+
+
+def edit_duchowny():
+    try:
+        i = listbox_duchowni.index(ACTIVE)
+        duchowny = duchowni[i]
+
+        entry_imie_duchowny.delete(0, END)
+        entry_imie_duchowny.insert(0, duchowny.imie)
+        entry_nazwisko_duchowny.delete(0, END)
+        entry_nazwisko_duchowny.insert(0, duchowny.nazwisko)
+        entry_funkcja_duchowny.delete(0, END)
+        entry_funkcja_duchowny.insert(0, duchowny.funkcja)
+
+        for idx, obj in enumerate(obiekty_sakralne):
+            if obj.nazwa == duchowny.obiekt_sakralny:
+                combo_obiekt_duchowny.current(idx)
+                break
+
+        duchowni.pop(i)
+        show_duchowni()
+        save_data_to_json()
+
+    except:
+        messagebox.showwarning("Błąd", "Wybierz duchownego do edycji!")
+
+
+def show_duchowni_on_map():
+    map_widget.delete_all_marker()
+
+    obiekty_z_duchownymi = set()
+    for duchowny in duchowni:
+        obiekty_z_duchownymi.add(duchowny.obiekt_sakralny)
+
+    markers_added = False
+    for obj in obiekty_sakralne:
+        if obj.nazwa in obiekty_z_duchownymi and obj.coordinates[0] != 0 and obj.coordinates[1] != 0:
+            duchowni_w_obiekcie = [d for d in duchowni if d.obiekt_sakralny == obj.nazwa]
+            duchowni_tekst = ", \n".join([f"{d.imie} {d.nazwisko} ({d.funkcja})" for d in duchowni_w_obiekcie])
+
+            marker_text = f"Duchowni: \n{duchowni_tekst}"
+            obj.marker = map_widget.set_marker(obj.coordinates[0], obj.coordinates[1], text=marker_text)
+            markers_added = True
+
+    if markers_added and obiekty_sakralne:
+        for obj in obiekty_sakralne:
+            if obj.nazwa in obiekty_z_duchownymi:
+                map_widget.set_position(obj.coordinates[0], obj.coordinates[1])
+                #map_widget.set_zoom(8)
+                break
 
 
 root = Tk()
@@ -381,7 +495,8 @@ ramka_szczegoly_obiektow.grid(row=1, column=0, columnspan=2, padx=10, pady=5, st
 frame_obiekty.grid_columnconfigure(0, weight=1)
 frame_obiekty.grid_columnconfigure(1, weight=1)
 
-Label(ramka_lista_obiektow, text='Lista obiektów sakralnych', font=('Arial', 12, 'bold')).grid(row=0, column=0, columnspan=3, pady=5)
+Label(ramka_lista_obiektow, text='Lista obiektów sakralnych', font=('Arial', 12, 'bold')).grid(row=0, column=0,
+                                                                                               columnspan=3, pady=5)
 
 listbox_obiekty_sakralne = Listbox(ramka_lista_obiektow, width=40, height=12)
 listbox_obiekty_sakralne.grid(row=1, column=0, columnspan=3, pady=5)
@@ -389,9 +504,12 @@ listbox_obiekty_sakralne.grid(row=1, column=0, columnspan=3, pady=5)
 Button(ramka_lista_obiektow, text='Usuń obiekt', command=remove_obiekt_sakralny).grid(row=2, column=0, padx=2, pady=2)
 Button(ramka_lista_obiektow, text='Edytuj obiekt', command=edit_obiekt_sakralny).grid(row=2, column=1, padx=2, pady=2)
 Button(ramka_lista_obiektow, text='Pokaż szczegóły', command=show_obiekt_details).grid(row=2, column=2, padx=2, pady=2)
-Button(ramka_lista_obiektow, text='Pokaż mapę obiektów', command=show_obiekty_sakralne_on_map).grid(row=3, column=0, columnspan=3, padx=2, pady=2)
+Button(ramka_lista_obiektow, text='Pokaż mapę obiektów', command=show_obiekty_sakralne_on_map).grid(row=3, column=0,
+                                                                                                    columnspan=3,
+                                                                                                    padx=2, pady=2)
 
-Label(ramka_formularz_obiektow, text='Dodaj obiekt sakralny', font=('Arial', 12, 'bold')).grid(row=0, column=0, columnspan=2, pady=5)
+Label(ramka_formularz_obiektow, text='Dodaj obiekt sakralny', font=('Arial', 12, 'bold')).grid(row=0, column=0,
+                                                                                               columnspan=2, pady=5)
 
 Label(ramka_formularz_obiektow, text='Nazwa obiektu:').grid(row=1, column=0, sticky=W, pady=2)
 entry_nazwa_obiektu = Entry(ramka_formularz_obiektow, width=25)
@@ -403,12 +521,16 @@ entry_miejscowosc_obiektu.grid(row=2, column=1, pady=2)
 
 Label(ramka_formularz_obiektow, text='Typ obiektu:').grid(row=3, column=0, sticky=W, pady=2)
 combo_typ_obiektu = ttk.Combobox(ramka_formularz_obiektow, width=22,
-                                 values=['Kościół','Cmentarz', 'Kaplica', 'Bazylika', 'Katedra', 'Klasztor', 'Synagoga', 'Meczet'])
+                                 values=['Kościół', 'Cmentarz', 'Kaplica', 'Bazylika', 'Katedra', 'Klasztor',
+                                         'Synagoga', 'Meczet'])
 combo_typ_obiektu.grid(row=3, column=1, pady=2)
 
-Button(ramka_formularz_obiektow, text='Dodaj obiekt', command=add_obiekt_sakralny).grid(row=4, column=0, columnspan=2, pady=10)
+Button(ramka_formularz_obiektow, text='Dodaj obiekt', command=add_obiekt_sakralny).grid(row=4, column=0, columnspan=2,
+                                                                                        pady=10)
 
-Label(ramka_szczegoly_obiektow, text='Szczegóły obiektu sakralnego:', font=('Arial', 12, 'bold')).grid(row=0, column=0, columnspan=6, pady=5)
+Label(ramka_szczegoly_obiektow, text='Szczegóły obiektu sakralnego:', font=('Arial', 12, 'bold')).grid(row=0, column=0,
+                                                                                                       columnspan=6,
+                                                                                                       pady=5)
 
 Label(ramka_szczegoly_obiektow, text='Nazwa:').grid(row=1, column=0, sticky=W, padx=5)
 label_nazwa_szczegoly_wartosc = Label(ramka_szczegoly_obiektow, text='-----', relief='sunken', width=15)
@@ -422,8 +544,52 @@ Label(ramka_szczegoly_obiektow, text='Typ:').grid(row=1, column=4, sticky=W, pad
 label_typ_szczegoly_wartosc = Label(ramka_szczegoly_obiektow, text='-----', relief='sunken', width=15)
 label_typ_szczegoly_wartosc.grid(row=1, column=5, padx=5)
 
+frame_duchowni = ttk.Frame(notebook)
+notebook.add(frame_duchowni, text='Duchowni')
+
+# Ujednolicony szablon dla duchownych
+ramka_lista_duchownych = Frame(frame_duchowni)
+ramka_formularz_duchownych = Frame(frame_duchowni)
+
+ramka_lista_duchownych.grid(row=0, column=0, padx=10, pady=5, sticky='nsew')
+ramka_formularz_duchownych.grid(row=0, column=1, padx=10, pady=5, sticky='nsew')
+
+# Konfiguracja grid
+frame_duchowni.grid_columnconfigure(0, weight=1)
+frame_duchowni.grid_columnconfigure(1, weight=1)
+
+Label(ramka_lista_duchownych, text='Lista duchownych', font=('Arial', 12, 'bold')).grid(row=0, column=0, columnspan=3, pady=5)
+
+listbox_duchowni = Listbox(ramka_lista_duchownych, width=40, height=12)
+listbox_duchowni.grid(row=1, column=0, columnspan=3, pady=5)
+
+Button(ramka_lista_duchownych, text='Usuń duchownego', command=remove_duchowny).grid(row=2, column=0, padx=2, pady=2)
+Button(ramka_lista_duchownych, text='Edytuj duchownego', command=edit_duchowny).grid(row=2, column=1, padx=2, pady=2)
+Button(ramka_lista_duchownych, text='Pokaż mapę duchownych', command=show_duchowni_on_map).grid(row=3, column=0, columnspan=3, padx=2, pady=2)
+
+Label(ramka_formularz_duchownych, text='Dodaj duchownego', font=('Arial', 12, 'bold')).grid(row=0, column=0, columnspan=2, pady=5)
+
+Label(ramka_formularz_duchownych, text='Imię:').grid(row=1, column=0, sticky=W, pady=2)
+entry_imie_duchowny = Entry(ramka_formularz_duchownych, width=25)
+entry_imie_duchowny.grid(row=1, column=1, pady=2)
+
+Label(ramka_formularz_duchownych, text='Nazwisko:').grid(row=2, column=0, sticky=W, pady=2)
+entry_nazwisko_duchowny = Entry(ramka_formularz_duchownych, width=25)
+entry_nazwisko_duchowny.grid(row=2, column=1, pady=2)
+
+Label(ramka_formularz_duchownych, text='Funkcja:').grid(row=3, column=0, sticky=W, pady=2)
+entry_funkcja_duchowny = Entry(ramka_formularz_duchownych, width=25)
+entry_funkcja_duchowny.grid(row=3, column=1, pady=2)
+
+Label(ramka_formularz_duchownych, text='Obiekt sakralny:').grid(row=4, column=0, sticky=W, pady=2)
+combo_obiekt_duchowny = ttk.Combobox(ramka_formularz_duchownych, width=22, state='readonly')
+combo_obiekt_duchowny.grid(row=4, column=1, pady=2)
+
+Button(ramka_formularz_duchownych, text='Dodaj duchownego', command=add_duchowny).grid(row=5, column=0, columnspan=2, pady=10)
+
 def on_tab_changed(event):
     update_combo_boxes()
+
 
 load_data_from_json()
 update_combo_boxes()
