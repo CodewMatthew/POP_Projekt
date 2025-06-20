@@ -34,6 +34,20 @@
       "nazwisko": "Kowalski",
       "funkcja": "Proboszcz",
       "obiekt_sakralny": "Kościół Najświętszego Zbawiciela w Rykach"
+    },
+    {
+      "imie": "Antoni",
+      "nazwisko": "Nasobroni",
+      "funkcja": "Wikary",
+      "obiekt_sakralny": "Kościół Najświętszego Zbawiciela w Rykach"
+    }
+  ],
+  "pracownicy": [
+    {
+      "imie": "Jan",
+      "nazwisko": "Niezbędny",
+      "stanowisko": "Organista",
+      "obiekt_sakralny": "Kościół Najświętszego Zbawiciela w Rykach"
     }
   ]
 }
