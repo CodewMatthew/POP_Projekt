@@ -315,6 +315,8 @@ def add_obiekt_sakralny():
     entry_miejscowosc_obiektu.delete(0, END)
     combo_typ_obiektu.set("")
     entry_nazwa_obiektu.focus()
+    map_widget.delete_all_marker()
+    show_obiekty_sakralne_on_map()
 
 
 def show_obiekty_sakralne():
@@ -331,6 +333,8 @@ def remove_obiekt_sakralny():
         obiekty_sakralne.pop(i)
         show_obiekty_sakralne()
         save_data_to_json()
+        map_widget.delete_all_marker()
+        show_obiekty_sakralne_on_map()
     except:
         messagebox.showwarning("Błąd", "Wybierz obiekt do usunięcia!")
 
@@ -370,6 +374,8 @@ def edit_obiekt_sakralny():
         obiekty_sakralne.pop(i)
         show_obiekty_sakralne()
         save_data_to_json()
+        map_widget.delete_all_marker()
+        show_obiekty_sakralne_on_map()
 
     except:
         messagebox.showwarning("Błąd", "Wybierz obiekt do edycji!")
@@ -409,6 +415,8 @@ def add_duchowny():
     entry_funkcja_duchowny.delete(0, END)
     combo_obiekt_duchowny.set("")
     entry_imie_duchowny.focus()
+    map_widget.delete_all_marker()
+    show_duchowni_on_map()
 
 
 def show_duchowni():
@@ -424,6 +432,8 @@ def remove_duchowny():
         duchowni.pop(i)
         show_duchowni()
         save_data_to_json()
+        map_widget.delete_all_marker()
+        show_duchowni_on_map()
     except:
         messagebox.showwarning("Błąd", "Wybierz duchownego do usunięcia!")
 
@@ -448,6 +458,8 @@ def edit_duchowny():
         duchowni.pop(i)
         show_duchowni()
         save_data_to_json()
+        map_widget.delete_all_marker()
+        show_duchowni_on_map()
 
     except:
         messagebox.showwarning("Błąd", "Wybierz duchownego do edycji!")
@@ -500,6 +512,8 @@ def add_pracownik():
     entry_stanowisko_pracownik.delete(0, END)
     combo_obiekt_pracownik.set("")
     entry_imie_pracownik.focus()
+    map_widget.delete_all_marker()
+    show_pracownicy_on_map()
 
 
 def show_pracownikow():
@@ -515,6 +529,8 @@ def remove_pracownik():
         pracownicy.pop(i)
         show_pracownikow()
         save_data_to_json()
+        map_widget.delete_all_marker()
+        show_pracownicy_on_map()
     except:
         messagebox.showwarning("Błąd", "Wybierz pracownika do usunięcia!")
 
@@ -539,6 +555,8 @@ def edit_pracownik():
         pracownicy.pop(i)
         show_pracownikow()
         save_data_to_json()
+        map_widget.delete_all_marker()
+        show_pracownicy_on_map()
 
     except:
         messagebox.showwarning("Błąd", "Wybierz pracownika do edycji!")
@@ -592,6 +610,21 @@ def show_wszyscy_on_map():
         map_widget.set_zoom(8)
 
 
+def on_tab_changed(event):
+    update_combo_boxes()
+
+    # Pobierz aktualnie wybraną zakładkę
+    selected_tab = event.widget.select()
+    tab_text = event.widget.tab(selected_tab, "text")
+
+    # Uruchom odpowiednią funkcję w zależności od wybranej zakładki
+    if tab_text == "Obiekty sakralne":
+        show_obiekty_sakralne_on_map()
+    elif tab_text == "Duchowni":
+        show_duchowni_on_map()
+    elif tab_text == "Pracownicy":
+        show_pracownicy_on_map()
+
 root = Tk()
 root.title('System zarządzania obiektami sakralnymi')
 root.geometry('1400x800')
@@ -614,6 +647,7 @@ map_widget.set_zoom(6)
 
 notebook = ttk.Notebook(left_frame)
 notebook.pack(fill='both', expand=True, padx=10, pady=10)
+notebook.bind("<<NotebookTabChanged>>", on_tab_changed)
 
 frame_obiekty = ttk.Frame(notebook)
 notebook.add(frame_obiekty, text='Obiekty sakralne')
